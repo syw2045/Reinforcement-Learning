@@ -19,8 +19,8 @@ class GridWorld:
 
         self.goal_state = (0,3) # 목표 State 좌표
         self.wall_state = (1,1) # 벽 State 좌표
-        self.state_state = (2,0) # 시작 State 좌표
-        self.agent_state = self.state_state # 에이전트 초기 State 좌표
+        self.start_state = (2,0) # 시작 State 좌표
+        self.agent_state = self.start_state # 에이전트 초기 State 좌표
 
     @property
     def height(self):
@@ -57,6 +57,19 @@ class GridWorld:
     
     def reward(self, state, action, next_state):
         return self.reward_map[next_state]
+    
+    def reset(self):
+        self.agent_state = self.start_state
+        return self.agent_state
+
+    def step(self, action):
+        state = self.agent_state
+        next_state = self.next_state(state, action)
+        reward = self.reward(state, action, next_state)
+        done = (next_state == self.goal_state)
+
+        self.agent_state = next_state
+        return next_state, reward, done
     
     def render_v(self, v=None, policy=None, print_value=True):
         renderer = render_helper.Renderer(self.reward_map, self.goal_state,
