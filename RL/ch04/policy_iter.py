@@ -17,19 +17,19 @@ def argmax(d):
 def greedy_policy(V, env, gamma):
     pi = {}
 
-    for state in env.states():
+    for state in env.states(): # 모든 state
         action_values = {}
 
-        for action in env.actions():
+        for action in env.actions(): # 모든 action
             next_state = env.next_state(state,action)
             r = env.reward(state, action, next_state)
-            value = r + gamma * V[next_state]
+            value = r + gamma * V[next_state] # r(s, a, s') + γv_π(s')
             action_values[action] = value
 
-        max_action = argmax(action_values)
+        max_action = argmax(action_values) #가장 큰 action을 고른다
         action_probs = {0: 0, 1: 0, 2: 0, 3:0}
         action_probs[max_action] = 1.0
-        pi[state] = action_probs
+        pi[state] = action_probs # state에서의 action이 결정됨
     return pi
 
 def policy_iter(env, gamma, threshold=0.001, is_render=False):
