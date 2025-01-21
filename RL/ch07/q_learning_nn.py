@@ -90,13 +90,11 @@ for episode in range(episodes):
     average_loss = total_loss / cnt
     loss_history.append(average_loss)
 
-# [그림 7-14] 에피소드별 손실 추이
 plt.xlabel('episode')
 plt.ylabel('loss')
 plt.plot(range(len(loss_history)), loss_history)
 plt.show()
 
-# [그림 7-15] 신경망을 이용한 Q 러닝으로 얻은 Q 함수와 정책
 Q = {}
 for state in env.states():
     for action in env.action_space:
