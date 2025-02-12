@@ -122,11 +122,11 @@ class DQNEnv:
         self.env.reset()
         self.reward_history = []
 
-        self.gif_frames = []
+        #self.gif_frames = []
 
     def run(self):
         for episode in range(NUM_EPISODES):
-            state = self.env.reset()[0]
+            state, _ = self.env.reset()
             done = False
             total_reward = 0
 

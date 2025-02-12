@@ -7,17 +7,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-# from PIL import Image
-# import matplotlib.pyplot as plt
-# import matplotlib.animation as animation
-# from IPython.display import display
-
-# def display_frames_as_gif(frames):
-#     pil_frames = [Image.fromarray(frame) for frame in frames]
-#     pil_frames[0].save('cartpole_animation.gif', save_all=True, append_images=pil_frames[1:], duration=50, loop=0)
-
 HIDDEN_SIZE = 128
-NUM_EPISODES = 100
+NUM_EPISODES = 200
 SYNC_INTERVAL = 20
 
 
@@ -44,21 +35,28 @@ class ReplayBuffer:
         return state, action, reward, next_state, done
 
 
-class QNet(nn.Module):
+class DuelingQNet(nn.Module):
     def __init__(self, state_size, action_size):
         super().__init__()
         self.l1 = nn.Linear(state_size, HIDDEN_SIZE)
         self.l2 = nn.Linear(HIDDEN_SIZE, HIDDEN_SIZE)
-        self.value = nn.Linear(HIDDEN_SIZE, action_size)
+        
+        ### Dueling DQN ###
+        self.value_stream = nn.Linear(HIDDEN_SIZE, 1) # V(s)
+        self.advantage_stream = nn.Linear(HIDDEN_SIZE, action_size) # A(s, a)
 
-    def forward(self, state):
-        l1 = F.relu(self.l1(state))
-        l2 = F.relu(self.l2(l1))
-        value = self.value(l2)
-        return value
+    def forward(self, x):
+        x = F.relu(self.l1(x))
+        x = F.relu(self.l2(x))
+        
+        value = self.value_stream(x)
+        advantage = self.advantage_stream(x)
+
+        q_function = value + (advantage - advantage.mean(dim=1, keepdim=True))
+        return q_function
 
 
-class DDQNAgent:
+class Dueling_Agent:
     def __init__(self):
         self.gamma = 0.98
         self.lr = 0.0005
@@ -73,8 +71,8 @@ class DDQNAgent:
         self.action_size = 2
 
         self.replay_buffer = ReplayBuffer(self.buffer_size, self.batch_size)
-        self.qnet = QNet(self.state_size, self.action_size)
-        self.qnet_target = QNet(self.state_size, self.action_size)
+        self.qnet = DuelingQNet(self.state_size, self.action_size)
+        self.qnet_target = DuelingQNet(self.state_size, self.action_size)
         self.optimizer = optim.Adam(self.qnet.parameters(), lr=self.lr)
 
     def get_action(self, state):
@@ -97,15 +95,10 @@ class DDQNAgent:
         qs = self.qnet(state)
         q = qs[np.arange(len(action)), action]
 
-        ### DDQN ###
-        next_qs = self.qnet(next_state)
-        next_actions = next_qs.argmax(1)
+        next_qs = self.qnet_target(next_state)
+        next_q = next_qs.max(1)[0]
 
-        next_qs_target = self.qnet_target(next_state)
-        next_q = next_qs_target[np.arange(len(action)), next_actions]
-        
-        #######
-
+        next_q.detach()
         target = reward + (1 - done) * self.gamma * next_q
 
         loss_fn = nn.MSELoss()
@@ -119,19 +112,15 @@ class DDQNAgent:
         self.qnet_target.load_state_dict(self.qnet.state_dict())
 
 
-class DDQNEnv:
+class Dueling_Env:
     def __init__(self):
         self.env = gym.make("CartPole-v1", render_mode="human")
-        #self.env = gym.make('CartPole-v1', render_mode='rgb_array')
-
         self.env.reset()
         self.reward_history = []
 
-        self.gif_frames = []
-
     def run(self):
         for episode in range(NUM_EPISODES):
-            state = self.env.reset()[0]
+            state, _ = self.env.reset()
             done = False
             total_reward = 0
 
@@ -139,11 +128,6 @@ class DDQNEnv:
                 action = agent.get_action(state)
                 next_state, reward, terminated, truncated, info = self.env.step(action)
                 done = terminated | truncated
-
-                # To make gif
-                # if episode % 10 == 0:
-                #     frame = self.env.render()
-                #     self.gif_frames.append(frame)
 
                 agent.update(state, action, reward, next_state, done)
                 state = next_state
@@ -156,11 +140,10 @@ class DDQNEnv:
             if episode % 10 == 0:
                 print("episode :{}, total reward : {}".format(episode, total_reward))
 
-        # display_frames_as_gif(self.gif_frames)
         self.env.close()
         
 
 if __name__ == "__main__":
-    env = DDQNEnv()
-    agent = DDQNAgent()
+    env = Dueling_Env()
+    agent = Dueling_Agent()
     env.run()
