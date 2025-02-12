@@ -16,6 +16,11 @@ import torch.optim as optim
 #     pil_frames = [Image.fromarray(frame) for frame in frames]
 #     pil_frames[0].save('cartpole_animation.gif', save_all=True, append_images=pil_frames[1:], duration=50, loop=0)
 
+HIDDEN_SIZE = 128
+NUM_EPISODES = 200
+SYNC_INTERVAL = 20
+
+
 class ReplayBuffer:
     def __init__(self, buffer_size, batch_size):
         self.buffer = deque(maxlen=buffer_size)
@@ -40,17 +45,17 @@ class ReplayBuffer:
 
 
 class QNet(nn.Module):
-    def __init__(self, action_size):
+    def __init__(self, state_size, action_size):
         super().__init__()
-        self.l1 = nn.Linear(4, 128)
-        self.l2 = nn.Linear(128, 128)
-        self.l3 = nn.Linear(128, action_size)
+        self.l1 = nn.Linear(state_size, HIDDEN_SIZE)
+        self.l2 = nn.Linear(HIDDEN_SIZE, HIDDEN_SIZE)
+        self.value = nn.Linear(HIDDEN_SIZE, action_size)
 
-    def forward(self, x):
-        x = F.relu(self.l1(x))
-        x = F.relu(self.l2(x))
-        x = self.l3(x)
-        return x
+    def forward(self, state):
+        l1 = F.relu(self.l1(state))
+        l2 = F.relu(self.l2(l1))
+        value = self.value(l2)
+        return value
 
 
 class DQNAgent:
@@ -64,11 +69,12 @@ class DQNAgent:
         
         self.buffer_size = 10000
         self.batch_size = 32
+        self.state_size = 4
         self.action_size = 2
 
         self.replay_buffer = ReplayBuffer(self.buffer_size, self.batch_size)
-        self.qnet = QNet(self.action_size)
-        self.qnet_target = QNet(self.action_size)
+        self.qnet = QNet(self.state_size, self.action_size)
+        self.qnet_target = QNet(self.state_size, self.action_size)
         self.optimizer = optim.Adam(self.qnet.parameters(), lr=self.lr)
 
     def get_action(self, state):
@@ -148,8 +154,6 @@ class DQNEnv:
         # display_frames_as_gif(self.gif_frames)
         self.env.close()
         
-NUM_EPISODES = 200
-SYNC_INTERVAL = 20
 
 if __name__ == "__main__":
     env = DQNEnv()
