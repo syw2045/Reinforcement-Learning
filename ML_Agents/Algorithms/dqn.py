@@ -1,4 +1,3 @@
-# 라이브러리 불러오기
 import numpy as np
 import random
 import copy
@@ -50,7 +49,7 @@ env_name = f"../envs/GridWorld/GridWorld.exe"
 # model save and load path
 date_time = datetime.datetime.now().strftime("%y%m%d%H%M%S")
 save_path = f"./saved_models/{game}/DQN/{date_time}"
-load_path = f"./saved_models/{game}/DQN/250301222521"
+load_path = f"./saved_models/{game}/DQN/250301174945"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

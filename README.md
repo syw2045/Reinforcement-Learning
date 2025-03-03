@@ -5,3 +5,12 @@
 | Algorithms      | Environment  | GIF | Plots |
 |---------------|---------------------------|----------------|-------|
 | Policy Iteration | FrozenLake_v1 | ![Frozen Lake](https://github.com/syw2045/Reinforcement-Learning/blob/master/GYM/video/FrozenLake-v1_slippery.gif) | - |
+
+
+## ML-Agents
+
+| Algorithms      | Environment  | GIF | Plots |
+|---------------|---------------------------|----------------|-------|
+| DQN | GridWorld | ![DQN](https://github.com/user-attachments/assets/60e59c9c-8400-40f6-852c-04036c83f764) | ![Image](https://github.com/user-attachments/assets/c1db5e46-6ab6-479c-bc64-062e9ac12724) |
+| A2C | GridWorld | ![A2C](https://github.com/user-attachments/assets/02b6be81-67dc-4b53-bfac-4191c27cc372) |  |
+| DDPG | Drone | ![DDPG](https://github.com/user-attachments/assets/9525faac-bb92-4671-9be4-00a75a3a718a) | ![Image](https://github.com/user-attachments/assets/2e1edb1c-437c-4c28-a83c-def95f6c0127) |
