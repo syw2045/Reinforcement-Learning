@@ -18,7 +18,7 @@ load_model = False
 train_mode = True
 
 batch_size = 32
-mem_maxlen = 10000
+mem_maxlen = 50000
 discount_factor = 0.99
 learning_rate = 0.00025
 
@@ -34,7 +34,7 @@ epsilon_eval = 0.05
 epsilon_init = 1.0 if train_mode else epsilon_eval
 epsilon_min = 0.1
 explore_step = run_step * 0.8
-epsilon_delta = (epsilon_init - epsilon_min)/explore_step if train_mode else 0
+eplsilon_delta = (epsilon_init - epsilon_min)/explore_step if train_mode else 0
 
 # Model save and load path
 date_time = datetime.datetime.now().strftime("%y%m%d%H%M%S")
@@ -47,20 +47,24 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class DQN(torch.nn.Module):
     def __init__(self, **kwargs):
         super(DQN, self).__init__(**kwargs)
-        self.conv1 = torch.nn.Conv2d(in_channels=4, out_channels=32, kernel_size=8, stride=4)
+        self.conv1 = torch.nn.Conv2d(in_channels=state_size[0], out_channels=32, kernel_size=8, stride=4)
+        dim1 = ((state_size[1] - 8)//4 + 1, (state_size[2] - 8)//4 + 1)
+        
         self.conv2 = torch.nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2)
+        dim2 = ((dim1[0] - 4)//2 + 1, (dim1[1] - 4)//2 + 1)
+        
         self.conv3 = torch.nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1)
+        dim3 = ((dim2[0] - 3)//1 + 1, (dim2[1] - 3)//1 + 1)
 
-        self.flat = torch.nn.Flatten()
-        self.fc1 = torch.nn.Linear(7*7*64, 512)
+        # self.flat = torch.nn.Flatten() # FC의 입력을 위해 1차원으로 변경
+        self.fc1 = torch.nn.Linear(64*dim3[0]*dim3[1], 512)
         self.q = torch.nn.Linear(512, action_size)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
-        x = self.flat(x)
-        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc1(x.view(x.size(0), -1)))
         return self.q(x)
 
 
@@ -84,7 +88,7 @@ class DQNAgent:
         
     # Epsilon greedy
     def get_action(self, state, training=True):
-        print("stacked_state shape:", state.shape)
+        # print("stacked_state shape:", state.shape)
         self.network.train(training)
         epsilon = self.epsilon if training else epsilon_eval
 
@@ -131,7 +135,7 @@ class DQNAgent:
         self.optimizer.step()
 
         # Epsilon decay
-        self.epsilon = max(epsilon_min, self.epsilon - epsilon_delta)
+        self.epsilon = max(epsilon_min, self.epsilon - eplsilon_delta)
 
         return loss.item()
 
@@ -184,6 +188,7 @@ if __name__ == '__main__':
         state = preprocessing(next_state) # state 업데이트
         next_stacked_state = np.stack(frames, axis=0)
        # print("next_stacked_state" ,next_stacked_state.shape)
+        score += reward
         if train_mode:
             agent.append_sample(stacked_state, action, reward, next_stacked_state, done)
 
@@ -197,9 +202,11 @@ if __name__ == '__main__':
                 agent.update_target()
 
         if done:
-            episode +=1
             scores.append(score)
             score = 0
+            env.reset()
+            episode +=1
+            
 
             if episode % print_interval == 0:
                 mean_score = np.mean(scores)
