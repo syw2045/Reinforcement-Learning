@@ -34,7 +34,7 @@ epsilon_eval = 0.05
 epsilon_init = 1.0 if train_mode else epsilon_eval
 epsilon_min = 0.1
 explore_step = run_step * 0.8
-eplsilon_delta = (epsilon_init - epsilon_min)/explore_step if train_mode else 0
+epsilon_delta = (epsilon_init - epsilon_min)/explore_step if train_mode else 0
 
 # Model save and load path
 date_time = datetime.datetime.now().strftime("%y%m%d%H%M%S")
@@ -57,17 +57,22 @@ class DQN(torch.nn.Module):
         dim3 = ((dim2[0] - 3)//1 + 1, (dim2[1] - 3)//1 + 1)
 
         self.flat = torch.nn.Flatten() # FC의 입력을 위해 1차원으로 변경
-        self.fc1 = torch.nn.Linear(64*dim3[0]*dim3[1], 512)
+        self.fc1 = torch.nn.Linear(64*7*7, 512)
         self.q = torch.nn.Linear(512, action_size)
 
-    # 앞서 선언한 Layer를 통해 Q-function 계산
     def forward(self, x):
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
+        
+        print("Shape after conv layers:", x.shape)  # 추가
+        
         x = self.flat(x)
+        print("Shape after flatten:", x.shape)  # 추가
+        
         x = F.relu(self.fc1(x))
         return self.q(x)
+
 
 # DQN_Agent
 class DQNAgent:
@@ -97,6 +102,8 @@ class DQNAgent:
         else:
             q = self.network(torch.FloatTensor(state).to(device))
             action = torch.argmax(q, axis=-1, keepdim=True).data.cpu().numpy()
+        
+        print(state.shape)
         return action
 
     def append_sample(self, state, action, reward, next_state, done):
@@ -110,25 +117,31 @@ class DQNAgent:
         next_state = np.stack([b[3] for b in batch], axis=0)
         done       = np.stack([b[4] for b in batch], axis=0)
 
-        state, action, reward, next_state, done = map(lambda x: torch.FloatTensor(x).to(device),
-                                                        [state, action, reward, next_state, done])
+        state      = torch.FloatTensor(state).to(device)  # (32, 4, 84, 84)
+        next_state = torch.FloatTensor(next_state).to(device)  # (32, 4, 84, 84)
+        
+        action = torch.LongTensor(action).unsqueeze(1).to(device)  # (32,) → (32, 1)
+        reward = torch.FloatTensor(reward).unsqueeze(1).to(device)  # (32,) → (32, 1)
+        done = torch.FloatTensor(done).unsqueeze(1).to(device)  # (32,) → (32, 1)
 
-        eye = torch.eye(action_size).to(device)
-        one_hot_action = eye[action.view(-1).long()]
-        q = (self.network(state) * one_hot_action).sum(1, keepdims=True)
+        # Q-value 계산
+        q_values = self.network(state)  # (32, 4) (각 액션에 대한 Q값)
+        q = q_values.gather(1, action)  # 선택된 action의 Q값만 가져옴 → (32, 1)
 
         with torch.no_grad():
-            next_q = self.target_network(next_state)
-            target_q = reward + next_q.max(1, keepdims=True).values * ((1 - done) * discount_factor)
+            next_q_values = self.target_network(next_state)  # (32, 4)
+            max_next_q = next_q_values.max(1, keepdim=True)[0]  # (32, 1)
+            target_q = reward + (1 - done) * discount_factor * max_next_q  # (32, 1)
 
+        # 손실 계산
         loss = F.smooth_l1_loss(q, target_q)
 
-        self.optimizer.zero_grad() # gradient 초기화 
-        loss.backward() # backprop을 통해 gradient 계산
-        self.optimizer.step() # model parameters update
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
 
-        # epsilon decay
-        self.epsilon = max(epsilon_min, self.epsilon - eplsilon_delta)
+        # Epsilon decay
+        self.epsilon = max(epsilon_min, self.epsilon - epsilon_delta)
 
         return loss.item()
 
@@ -149,22 +162,16 @@ class DQNAgent:
         self.writer.add_scalar("model/epsilon", epsilon, step)
 
 def preprocessing(state):
-    resized_state = cv2.resize(state, (84, 84))
-    preprocessed_state = cv2.cvtColor(resized_state, cv2.COLOR_BGR2GRAY)
-    #print(preprocessed_state.shape) # (84, 84)
-    return preprocessed_state
-
-# def stack_state(state_list):
+    gray_state = cv2.cvtColor(state, cv2.COLOR_BGR2GRAY)
+    resized_state = cv2.resize(gray_state, (84, 84))
+    return resized_state
 
 if __name__ == '__main__':
     env = gym.make("ALE/Breakout-v5", render_mode="rgb_array")
-    state, _ = env.reset()
-
+    state, _ = env.reset() # state : (210, 160, 3)
+    
     # Agent
     agent = DQNAgent()
-    #print(env.action_space) # Discrete(4)
-    #print(env.observation_space) # Box(0, 255, (210, 160, 3), uint8)
-    # state_size = [4, 84, 84]  # (C, H, W)
     losses, scores, episode, score = [], [], 0, 0
     for step in range(run_step + test_step):
         if step == run_step:
@@ -173,15 +180,34 @@ if __name__ == '__main__':
             print("TEST START")
             train_mode = False
 
-        preprocessed_state = preprocessing(state)
-        
-        # Action 
-        action = agent.get_action(preprocessed_state, train_mode)
+        for _ in range(random.randint(1, 30)):
+            observe, _, _, _,_ = env.step(1)
 
-        _, _, reward, next_state, done = env.step(action)
+        preprocessed_state = preprocessing(observe) # 84x84
+
+        stacked_state = deque([preprocessed_state] * 4, maxlen=4)
+        stacked_state = np.stack(list(stacked_state), axis=0)  # 1x4x84x84
+        stacked_state = np.expand_dims(stacked_state, axis=0)
+
+        action = agent.get_action(stacked_state, train_mode)
+        
+        next_state, reward, terminated, truncated, info = env.step(action)
+        done = terminated | truncated
+        
+        next_preprocessed_state = preprocessing(next_state)
+        print("Shape of next_preprocessed_state:", next_preprocessed_state.shape)
+
+        next_history = deque(stacked_state, maxlen=4)
+        print("Before appending to deque:", next_history[-1].shape)
+
+        next_history.append(next_preprocessed_state)
+        print("After appending to deque:", next_history[-1].shape)
+
+        next_history = np.stack(list(next_history), axis=0)
+        next_history = np.expand_dims(next_history, axis=0)
 
         if train_mode:
-            agent.append_sample(preprocessed_state, action, reward, next_state, done)
+            agent.append_sample(stacked_state, action, reward, next_history, done)
 
         if train_mode and step > max(batch_size, train_start_step):
             # Training
@@ -203,8 +229,7 @@ if __name__ == '__main__':
                 agent.write_summray(mean_score, mean_loss, agent.epsilon, step)
                 losses, scores = [], []
 
-                print(f"{episode} Episode / Step: {step} / Score: {mean_score:.2f} / " +\
-                      f"Loss: {mean_loss:.4f} / Epsilon: {agent.epsilon:.4f}")
+                print(f"{episode} Episode / Step: {step} / Score: {mean_score:.2f} / " +  f"Loss: {mean_loss:.4f} / Epsilon: {agent.epsilon:.4f}")
 
             # Model save 
             if train_mode and episode % save_interval == 0:
