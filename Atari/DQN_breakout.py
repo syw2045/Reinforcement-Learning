@@ -47,31 +47,22 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class DQN(torch.nn.Module):
     def __init__(self, **kwargs):
         super(DQN, self).__init__(**kwargs)
-        self.conv1 = torch.nn.Conv2d(in_channels=state_size[0], out_channels=32, kernel_size=8, stride=4)
-        dim1 = ((state_size[1] - 8)//4 + 1, (state_size[2] - 8)//4 + 1)
-        
+        self.conv1 = torch.nn.Conv2d(in_channels=4, out_channels=32, kernel_size=8, stride=4)
         self.conv2 = torch.nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2)
-        dim2 = ((dim1[0] - 4)//2 + 1, (dim1[1] - 4)//2 + 1)
-        
         self.conv3 = torch.nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1)
-        dim3 = ((dim2[0] - 3)//1 + 1, (dim2[1] - 3)//1 + 1)
 
-        self.flat = torch.nn.Flatten() # FC의 입력을 위해 1차원으로 변경
-        self.fc1 = torch.nn.Linear(64*7*7, 512)
+        self.flat = torch.nn.Flatten()
+        self.fc1 = torch.nn.Linear(7*7*64, 512)
         self.q = torch.nn.Linear(512, action_size)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
-        
-        print("Shape after conv layers:", x.shape)  # 추가
-        
         x = self.flat(x)
-        print("Shape after flatten:", x.shape)  # 추가
-        
         x = F.relu(self.fc1(x))
         return self.q(x)
+
 
 
 # DQN_Agent
@@ -93,6 +84,7 @@ class DQNAgent:
         
     # Epsilon greedy
     def get_action(self, state, training=True):
+        print("stacked_state shape:", state.shape)
         self.network.train(training)
         epsilon = self.epsilon if training else epsilon_eval
 
@@ -103,7 +95,6 @@ class DQNAgent:
             q = self.network(torch.FloatTensor(state).to(device))
             action = torch.argmax(q, axis=-1, keepdim=True).data.cpu().numpy()
         
-        print(state.shape)
         return action
 
     def append_sample(self, state, action, reward, next_state, done):
@@ -127,7 +118,6 @@ class DQNAgent:
         # Q-value 계산
         q_values = self.network(state)  # (32, 4) (각 액션에 대한 Q값)
         q = q_values.gather(1, action)  # 선택된 action의 Q값만 가져옴 → (32, 1)
-
         with torch.no_grad():
             next_q_values = self.target_network(next_state)  # (32, 4)
             max_next_q = next_q_values.max(1, keepdim=True)[0]  # (32, 1)
@@ -164,15 +154,20 @@ class DQNAgent:
 def preprocessing(state):
     gray_state = cv2.cvtColor(state, cv2.COLOR_BGR2GRAY)
     resized_state = cv2.resize(gray_state, (84, 84))
-    return resized_state
+    normalized_state = resized_state / 255.0
+    return normalized_state.astype(np.float32)
 
 if __name__ == '__main__':
     env = gym.make("ALE/Breakout-v5", render_mode="rgb_array")
     state, _ = env.reset() # state : (210, 160, 3)
-    
+    frames = deque(maxlen=4)
     # Agent
     agent = DQNAgent()
     losses, scores, episode, score = [], [], 0, 0
+
+    for _ in range(4):
+        frames.append(preprocessing(state))
+
     for step in range(run_step + test_step):
         if step == run_step:
             if train_mode:
@@ -180,34 +175,17 @@ if __name__ == '__main__':
             print("TEST START")
             train_mode = False
 
-        for _ in range(random.randint(1, 30)):
-            observe, _, _, _,_ = env.step(1)
+        stacked_state = np.stack(frames, axis=0)
+       # print("stacked_state",stacked_state.shape)
+        action = agent.get_action(stacked_state) # 에이전트의 행동 선택
+        next_state, reward, done, _, _ = env.step(action)
 
-        preprocessed_state = preprocessing(observe) # 84x84
-
-        stacked_state = deque([preprocessed_state] * 4, maxlen=4)
-        stacked_state = np.stack(list(stacked_state), axis=0)  # 1x4x84x84
-        stacked_state = np.expand_dims(stacked_state, axis=0)
-
-        action = agent.get_action(stacked_state, train_mode)
-        
-        next_state, reward, terminated, truncated, info = env.step(action)
-        done = terminated | truncated
-        
-        next_preprocessed_state = preprocessing(next_state)
-        print("Shape of next_preprocessed_state:", next_preprocessed_state.shape)
-
-        next_history = deque(stacked_state, maxlen=4)
-        print("Before appending to deque:", next_history[-1].shape)
-
-        next_history.append(next_preprocessed_state)
-        print("After appending to deque:", next_history[-1].shape)
-
-        next_history = np.stack(list(next_history), axis=0)
-        next_history = np.expand_dims(next_history, axis=0)
-
+        frames.append(preprocessing(next_state))
+        state = preprocessing(next_state) # state 업데이트
+        next_stacked_state = np.stack(frames, axis=0)
+       # print("next_stacked_state" ,next_stacked_state.shape)
         if train_mode:
-            agent.append_sample(stacked_state, action, reward, next_history, done)
+            agent.append_sample(stacked_state, action, reward, next_stacked_state, done)
 
         if train_mode and step > max(batch_size, train_start_step):
             # Training
