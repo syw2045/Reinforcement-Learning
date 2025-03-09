@@ -8,6 +8,12 @@
 | Value Iteration | Taxi_v3 | ![Taxi](https://github.com/user-attachments/assets/549bd7c3-5348-49d1-9eb7-b8cc9b62e6a4) | |
 
 
+## Atari Games
+| Algorithms      | Environment  | GIF | Plots |
+|---------------|---------------------------|----------------|-------|
+| Dueling DQN | Pong-v5 | ![Image](https://github.com/user-attachments/assets/ab45bfe0-5aaf-4f3a-9c5e-451f2dcdd709) | ![Image](https://github.com/user-attachments/assets/bd6252de-e0f7-416c-892f-6d47390db5fc) |
+
+
 ## ML-Agents
 
 | Algorithms      | Environment  | GIF | Plots |
