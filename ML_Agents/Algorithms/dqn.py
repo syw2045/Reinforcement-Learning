@@ -65,11 +65,10 @@ class DQN(torch.nn.Module):
         self.conv3 = torch.nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1)
         dim3 = ((dim2[0] - 3)//1 + 1, (dim2[1] - 3)//1 + 1)
 
-        self.flat = torch.nn.Flatten() # FC의 입력을 위해 1차원으로 변경
+        self.flat = torch.nn.Flatten()
         self.fc1 = torch.nn.Linear(64*dim3[0]*dim3[1], 512)
         self.q = torch.nn.Linear(512, action_size)
 
-    # 앞서 선언한 Layer를 통해 Q-function 계산
     def forward(self, x):
         x = x.permute(0, 3, 1, 2) # Unity와 Pytorch의 이미지 차원을 맞춰준다. (순서가 다름)
         x = F.relu(self.conv1(x))
@@ -96,16 +95,13 @@ class DQNAgent:
             self.target_network.load_state_dict(checkpoint["network"])
             self.optimizer.load_state_dict(checkpoint["optimizer"])
         
-    # Epsilon greedy
     def get_action(self, state, training=True):
         self.network.train(training)
         epsilon = self.epsilon if training else epsilon_eval
 
-        # 랜덤하게 action 선택
         if epsilon > random.random():  
             action = np.random.randint(0, action_size, size=(state.shape[0],1))
 
-        # 아니라면 Q function을 가장 크게하는 action 선택
         else:
             q = self.network(torch.FloatTensor(state).to(device))
             action = torch.argmax(q, axis=-1, keepdim=True).data.cpu().numpy()
