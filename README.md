@@ -6,6 +6,7 @@
 |---------------|---------------------------|----------------|-------|
 | Policy Iteration | FrozenLake_v1 | ![Frozen Lake](https://github.com/syw2045/Reinforcement-Learning/blob/master/GYM/video/FrozenLake-v1_slippery.gif) | |
 | Value Iteration | Taxi_v3 | ![Taxi](https://github.com/user-attachments/assets/549bd7c3-5348-49d1-9eb7-b8cc9b62e6a4) | |
+| DQN | Cartpole | ![Image](https://github.com/user-attachments/assets/903f64eb-8530-490f-a7cd-15a79bd72b66) | |
 
 
 ## Atari Games
