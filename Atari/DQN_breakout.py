@@ -6,76 +6,86 @@ import torch.nn.functional as F
 import copy
 import random
 import cv2
+import time
 
 from collections import deque
 from torch.utils.tensorboard import SummaryWriter
 
 # Hyperparameters
-state_size = [4, 84, 84]  # (C, H, W)
-action_size = 4  # Noop / Fire / Right / Left
+reward_50_flag = True
+reward_100_flag = True
+reward_150_flag = True
 
-load_model = True
-train_mode = False
+ACTION_SIZE = 4  # Noop / Fire / Right / Left
 
-batch_size = 32
-mem_maxlen = 10000
+MAX_EPISODE = 20000  # Max episode
+MAX_STEP = 10000  # Max step size for one episode
+
+LOAD_EPISODE = 2000
+LOAD_MODEL = False
+TRAIN_MODE = True
+
+BATCH_SIZE = 32
+MEM_MAXLEN = 100000
+MEM_MINLEN = 50000
+START_EPISODE = 1
+CAREER_HIGH = 0
+
 discount_factor = 0.99
-learning_rate = 0.00025
+learning_rate = 0.0004
 
-run_step = 50000 if train_mode else 0
-test_step = 5000
-train_start_step = 5000
-target_update_step = 500 # update 주기
+# 5000(양호) -> 3000(episode 2000일때 avg_reward 1.8) -> 10000으로 해봐야 할듯
+target_update_step = 10000 # episode 하나 당 200 step정도 가는듯.
 
-print_interval = 10
-save_interval = 100
+SAVE_INTERVAL = 200
 
 epsilon_eval = 0.05
-epsilon_init = 1.0 if train_mode else epsilon_eval
-epsilon_min = 0.2
-explore_step = run_step * 0.8
-eplsilon_delta = (epsilon_init - epsilon_min)/explore_step if train_mode else 0
+epsilon_init = 1.0 if TRAIN_MODE else epsilon_eval
+epsilon_min = 0.01
+
+explore_step = 1000000 if TRAIN_MODE else 0 # 500000
+epsilon_delta = (epsilon_init - epsilon_min)/explore_step if TRAIN_MODE else 0
 
 # Model save and load path
 date_time = datetime.datetime.now().strftime("%y%m%d%H%M%S")
-save_path = f"./saved_models/Atari/DQN/{date_time}"
-load_path = "./saved_models/Atari/DQN/250306150226"
+save_path = f"./saved_models/Atari/BreakOut/DQN/{date_time}"
+load_path = "./saved_models/Atari/BreakOut/DQN/250310155038"
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # DQN 
 class DQN(torch.nn.Module):
     def __init__(self, **kwargs):
         super(DQN, self).__init__(**kwargs)
-        self.conv1 = torch.nn.Conv2d(in_channels=state_size[0], out_channels=32, kernel_size=8, stride=4)
+        self.conv1 = torch.nn.Conv2d(in_channels=4, out_channels=32, kernel_size=8, stride=4)
         self.conv2 = torch.nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2)
         self.conv3 = torch.nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1)
-        self.flat = torch.nn.Flatten()
+
         self.fc1 = torch.nn.Linear(7*7*64, 512)
-        self.q = torch.nn.Linear(512, action_size)
+        self.q = torch.nn.Linear(512, ACTION_SIZE)
 
     def forward(self, x):
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
-        x = torch.flatten(x, start_dim=1)
-        x = self.fc1(x)
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+        x = x.view(x.size(0), -1)
+        x = F.relu(self.fc1(x))
         x = self.q(x)
         return x
 
 # DQN_Agent
 class DQNAgent:
     def __init__(self):
-        self.network = DQN().to(device) # Network 생성
-        self.target_network = copy.deepcopy(self.network) # Target Network 생성
+        self.network = DQN().to(DEVICE)
+        self.target_network = copy.deepcopy(self.network)
         self.optimizer = torch.optim.Adam(self.network.parameters(), lr=learning_rate)
-        self.memory = deque(maxlen=mem_maxlen)
+        self.memory = deque(maxlen=MEM_MAXLEN)
         self.epsilon = epsilon_init
         self.writer = SummaryWriter(save_path)
 
-        if load_model == True:
-            print(f"... Load Model from {load_path}/ckpt ...")
-            checkpoint = torch.load(load_path+'/ckpt', map_location=device)
+        if LOAD_MODEL == True:
+            print(f"... Load Model from {load_path}/ckpt_{LOAD_EPISODE} ...")
+            checkpoint = torch.load(load_path+f'/ckpt_{LOAD_EPISODE}', map_location=DEVICE)
             self.network.load_state_dict(checkpoint["network"])
             self.target_network.load_state_dict(checkpoint["network"])
             self.optimizer.load_state_dict(checkpoint["optimizer"])
@@ -85,129 +95,160 @@ class DQNAgent:
         self.network.train(training)
         epsilon = self.epsilon if training else epsilon_eval
 
-        # 랜덤하게 action 선택
-        if epsilon > random.random():  
-            action = np.random.randint(0, action_size)
-            return action
-        # 아니라면 Q function을 가장 크게하는 action 선택
+        if epsilon > random.random():
+            action = random.randrange(ACTION_SIZE)
         else:
-            q = self.network(torch.FloatTensor(state).unsqueeze(0).to(device))
-            action = torch.argmax(q, axis=-1).data.cpu().numpy()
-            return action[0]
+            with torch.no_grad():
+                state = torch.tensor(state, dtype=torch.float, device=DEVICE).unsqueeze(0)
+                q_values = self.network.forward(state)
+                action = torch.argmax(q_values).item()
+        return action
     
 
 
     def append_sample(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done))
+        self.memory.append([state[None, :], action, reward, next_state[None, :], done])
 
     def train_model(self):
-        batch = random.sample(self.memory, batch_size)
-        state      = np.stack([b[0] for b in batch], axis=0)
-        action     = np.stack([b[1] for b in batch], axis=0)
-        reward     = np.stack([b[2] for b in batch], axis=0)
-        next_state = np.stack([b[3] for b in batch], axis=0)
-        done       = np.stack([b[4] for b in batch], axis=0)
+        if len(self.memory) < MEM_MINLEN:
+            return 0, 0
 
-        state, action, reward, next_state, done = map(lambda x: torch.FloatTensor(x).to(device),
-                                                            [state, action, reward, next_state, done])
+        state, action, reward, next_state, done = zip(*random.sample(self.memory, BATCH_SIZE))
 
-        eye = torch.eye(action_size).to(device)
-        one_hot_action = eye[action.view(-1).long()]
-        q = (self.network(state) * one_hot_action).sum(1, keepdims=True)
+        state = np.concatenate(state)
+        next_state = np.concatenate(next_state)
 
+        state = torch.tensor(state, dtype=torch.float, device=DEVICE)
+        next_state = torch.tensor(next_state, dtype=torch.float, device=DEVICE)
+        action = torch.tensor(action, dtype=torch.long, device=DEVICE)
+        reward = torch.tensor(reward, dtype=torch.float, device=DEVICE)
+        done = torch.tensor(done, dtype=torch.float, device=DEVICE)
+
+        state_q = self.network(state)
+        
         with torch.no_grad():
-            next_q = self.target_network(next_state)
-            target_q = reward + next_q.max(1, keepdims=True).values * ((1 - done) * discount_factor)
+            next_states_q_values = self.target_network(next_state)
+            next_states_target_q_value = next_states_q_values.max(1)[0].detach()
 
-        loss = F.smooth_l1_loss(q, target_q)
+        target_q = reward + discount_factor * next_states_target_q_value * (1 - done)
 
-        self.optimizer.zero_grad() # gradient 초기화 
-        loss.backward() # backprop을 통해 gradient 계산
-        self.optimizer.step() # model parameters update
+        loss = F.smooth_l1_loss(state_q.gather(1, action.unsqueeze(1)), target_q.unsqueeze(1))
 
-        # epsilon decay
-        self.epsilon = max(epsilon_min, self.epsilon - eplsilon_delta)
+        self.optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.network.parameters(), 10.)
+        self.optimizer.step()
 
-        return loss.item()
+        self.epsilon = max(epsilon_min, self.epsilon - epsilon_delta)
+
+        return loss.item(), torch.max(state_q).item()
 
     # target network update
     def update_target(self):
         self.target_network.load_state_dict(self.network.state_dict())
 
-    def save_model(self):
-        print(f"... Save Model to {save_path}/ckpt ...")
+    def save_model(self, episode, reward):
+        print(f"... Save Model to {save_path}_{reward}/ckpt ...")
         torch.save({
-            "network" : self.network.state_dict(),
-            "optimizer" : self.optimizer.state_dict(),
-        }, save_path+'/ckpt')
+            "network": self.network.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
+        }, save_path + f"/ckpt_{episode}_{reward}")
 
-    def write_summray(self, score, loss, epsilon, step):
-        self.writer.add_scalar("run/score", score, step)
-        self.writer.add_scalar("model/loss", loss, step)
-        self.writer.add_scalar("model/epsilon", epsilon, step)
+    def write_summray(self, score, loss, q_val, episode):
+        self.writer.add_scalar("run/score", score, episode)
+        self.writer.add_scalar("model/loss", loss, episode)
+        self.writer.add_scalar("model/q_val", q_val, episode)
 
-def preprocessing(state):
-    gray_state = cv2.cvtColor(state, cv2.COLOR_BGR2GRAY)
-    resized_state = cv2.resize(gray_state, (84, 84))
-    normalized_state = resized_state / 255.0
-    return normalized_state.astype(np.float32)
-
+    def preprocessing(self, state):
+        frame = cv2.cvtColor(state, cv2.COLOR_BGR2GRAY)
+        frame = frame[34:194, 0:160]
+        frame = cv2.resize(frame, (84, 84))
+        frame = frame / 255.0
+        return frame
+    
 if __name__ == '__main__':
-    env = gym.make("ALE/Breakout-v5", render_mode="human")
-    state, _ = env.reset() # state : (210, 160, 3)
-    frames = deque(maxlen=4)
-    # Agent
+    env = gym.make("ALE/Breakout-v5", render_mode="rgb_array")
     agent = DQNAgent()
+    startTime = time.time()
+
     losses, scores, episode, score = [], [], 0, 0
+    avg_100_reward = deque(maxlen=100)
+    total_step = 1
+    dead = False
+    
 
-    for _ in range(4):
-        frames.append(preprocessing(state))
+    for episode in range(START_EPISODE, MAX_EPISODE):
+        env.reset()
+        for _ in range(random.randint(1, 30)):
+            state, _, _, _, _ = env.step(0) # state : (210, 160, 3)          
+        state = agent.preprocessing(state)
+        state = np.stack((state,state,state,state))
+        
+        total_reward = 0
+        total_loss = 0
+        total_q_val = 0
+        game_life = 5
 
-    for step in range(run_step + test_step):
-        if step == run_step:
-            if train_mode:
-                agent.save_model()
-            print("TEST START")
-            train_mode = False
-
-        stacked_state = np.stack(frames, axis=0)
-        action = agent.get_action(stacked_state)
-        next_state, reward, done, _, _ = env.step(action)
-
-        frames.append(preprocessing(next_state))
-        state = preprocessing(next_state)
-        next_stacked_state = np.stack(frames, axis=0)
-        score += reward
-
-        if train_mode:
-            agent.append_sample(stacked_state, [action], [reward], next_stacked_state, [done])
-
-        if train_mode and step > max(batch_size, train_start_step):
-            # Training
-            loss = agent.train_model()
-            losses.append(loss)
-
-            # Target Network update
-            if step % target_update_step == 0:
-                agent.update_target()
-
-        if done:
-            scores.append(score)
-            score = 0
-            env.reset()
-            episode +=1
+        for step in range(MAX_STEP):
+            total_step += 1
             
+            if dead:
+                dead = False
+                action = 1
+            else: action = agent.get_action(state)
 
-            if episode % print_interval == 0:
-                mean_score = np.mean(scores)
-                mean_loss = np.mean(losses)
-                agent.write_summray(mean_score, mean_loss, agent.epsilon, step)
-                losses, scores = [], []
+            next_state, reward, done, _ , info= env.step(action)
 
-                print(f"{episode} Episode / Step: {step} / Score: {mean_score:.2f} / " +  f"Loss: {mean_loss:.4f} / Epsilon: {agent.epsilon:.4f}")
+            next_state = agent.preprocessing(next_state)
+            next_state = np.stack((next_state, state[0], state[1], state[2]))
 
-            # Model save 
-            if train_mode and episode % save_interval == 0:
-                agent.save_model()
+            reward = np.clip(reward, -1., 1.)
+            
+            if game_life > info['lives']:
+                dead = True
+                game_life = info['lives']
+
+            agent.append_sample(state, action, reward, next_state, dead)
+            state = next_state
+
+            if TRAIN_MODE:
+                loss, max_q_val = agent.train_model()
+                if total_step % target_update_step == 0:
+                    agent.update_target()
+            else:
+                loss, max_q_val = [0, 0]
+
+            total_loss += loss
+            total_q_val += max_q_val
+            total_reward += reward
+
+            if done:
+                current_time_format = time.strftime("%H:%M:%S", time.localtime())
+                avg_100_reward.append(total_reward)
+                avg_reward = np.mean(avg_100_reward)
+                CAREER_HIGH = max(CAREER_HIGH, avg_reward)
+                env.reset()
+
+                if episode % 10 == 0:
+                    print(f"{episode} Episode / Time : {current_time_format} /  Total_Step: {total_step} / Score: {total_reward} / avg_reward: {avg_reward:.3f} / Loss: {total_loss:.2f} / Q_val: {total_q_val:.2f} / Epsilon: {agent.epsilon:.4f}, career_high: {CAREER_HIGH:.3f}")
+
+                agent.write_summray(avg_reward, total_loss, total_q_val, episode)
+                
+                if TRAIN_MODE and episode % SAVE_INTERVAL == 0:
+                    agent.save_model(episode, avg_reward)
+
+                if avg_reward > 50 and reward_50_flag:
+                    agent.save_model(episode, avg_reward)
+                    reward_50_flag = False
+
+                if avg_reward > 100 and reward_100_flag:
+                    agent.save_model(episode, avg_reward)
+                    reward_100_flag = False
+
+                if avg_reward > 150 and reward_150_flag:
+                    agent.save_model(episode, avg_reward)
+                    reward_150_flag = False
+                    
+                break
 
     env.close()
