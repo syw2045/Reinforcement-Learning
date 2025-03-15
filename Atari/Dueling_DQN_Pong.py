@@ -89,7 +89,6 @@ class DDQNAgent:
         self.optimizer = torch.optim.Adam(self.network.parameters(), lr=learning_rate)
         self.epsilon = epsilon_init
         self.memory = deque(maxlen=mem_maxlen)
-        self.epsilon = epsilon_init
         self.writer = SummaryWriter(save_path)
 
         if LOAD_MODEL == True:
