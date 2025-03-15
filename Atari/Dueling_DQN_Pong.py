@@ -14,8 +14,8 @@ from torch.utils.tensorboard import SummaryWriter
 
 ACTION_SIZE = 6
 START_EPISODE = 1
-MAX_EPISODE = 900  # Max episode
-MAX_STEP = 100000  # Max step size for one episode
+MAX_EPISODE = 900
+MAX_STEP = 100000
 BATCH_SIZE = 64
 
 SAVE_MODEL_INTERVAL = 10
@@ -115,8 +115,8 @@ class DDQNAgent:
         else:
             with torch.no_grad():
                 state = torch.tensor(state, dtype=torch.float, device=DEVICE).unsqueeze(0)
-                q_values = self.network.forward(state)  # (1, action_size)
-                action = torch.argmax(q_values).item()  # Returns the indices of the maximum value of all elements
+                q_values = self.network.forward(state)
+                action = torch.argmax(q_values).item() 
         return action
     
 
