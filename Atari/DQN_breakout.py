@@ -159,7 +159,7 @@ class DQNAgent:
         return frame
 
 if __name__ == '__main__':
-    env = gym.make('ALE/Breakout-v5', render_mode="rgb_array")
+    env = gym.make('ALE/Breakout-v5', render_mode="human") # rgb_array
     agent = DQNAgent()
 
     losses, scores, episode, score = [], [], 0, 0
