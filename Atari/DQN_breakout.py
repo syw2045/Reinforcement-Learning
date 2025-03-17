@@ -162,7 +162,6 @@ if __name__ == '__main__':
     env = gym.make('ALE/Breakout-v5', render_mode="human") # rgb_array
     agent = DQNAgent()
 
-    losses, scores, episode, score = [], [], 0, 0
     avg_100_reward = deque(maxlen=100)
     total_step = 0
 

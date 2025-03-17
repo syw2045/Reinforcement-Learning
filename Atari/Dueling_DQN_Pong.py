@@ -43,7 +43,7 @@ eplsilon_delta = (epsilon_init - epsilon_min)/explore_step if TRAIN_MODE else 0
 # Model save and load path
 date_time = datetime.datetime.now().strftime("%y%m%d%H%M%S")
 save_path = f"./saved_models/Atari/Pong/DDQN/{date_time}"
-load_path = "./saved_models/Atari/Pong/DDQN/250307201923"
+load_path = "./saved_models/Atari/Pong/DDQN/250317102816"
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
