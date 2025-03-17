@@ -13,7 +13,7 @@
 | Algorithms      | Environment  | GIF | Plots |
 |---------------|---------------------------|----------------|-------|
 | DQN | Breakout-v5| ![Image](https://github.com/user-attachments/assets/de0001e0-d5af-4c26-b1f5-a82c8c9b601c) | ![Image](https://github.com/user-attachments/assets/e523beea-0266-4628-8df4-a68f1727b2e1) |
-| Dueling DQN | Pong-v5 | ![Image](https://github.com/user-attachments/assets/ab45bfe0-5aaf-4f3a-9c5e-451f2dcdd709) | ![Image](https://github.com/user-attachments/assets/bd6252de-e0f7-416c-892f-6d47390db5fc) |
+| Dueling DQN | Pong-v5 | ![Image](https://github.com/user-attachments/assets/ab45bfe0-5aaf-4f3a-9c5e-451f2dcdd709) | ![Image](https://github.com/user-attachments/assets/3a3ae3a0-27ec-4cf7-a559-a22e92cce054)|
 
 
 ## ML-Agents
