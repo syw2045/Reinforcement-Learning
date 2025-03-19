@@ -14,21 +14,22 @@ STATE_DIM = 3
 ACTION_DIM = 1
 MAX_STEP = 200
 
-UPDATE_INTERVAL = 200
 SAVE_INTERVAL = 500
 PRINT_INTERVAL = 10
 
-GAMMA = 0.99
-LAMDA = 0.95
+GAMMA = 0.9
+LAMDA = 0.9
 
 EPOCHS = 10
 CLIP_RATIO = 0.2
 
-ACTOR_LR = 0.0001
-CRITIC_LR = 0.0005
+ACTOR_LR = 0.0003
+CRITIC_LR = 0.0003
 
 BATCH_SIZE = 32 
-MEMORY_SIZE = 32
+BUFFER_SIZE = 10
+
+ROLLOUT_LEN = 3
 
 START_EPI = 1
 END_EPI = 10000
@@ -81,7 +82,7 @@ class PPOAgent:
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=ACTOR_LR)
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=CRITIC_LR)
 
-        self.memory = deque(maxlen=MEMORY_SIZE) 
+        self.memory = []
         self.writer = SummaryWriter(save_path)
 
         if TEST_MODE == True:
@@ -94,6 +95,9 @@ class PPOAgent:
             self.target_critic.load_state_dict(checkpoint["critic"])
             self.critic_optimizer.load_state_dict(checkpoint["critic_optimizer"])
 
+    def append_data(self, transition):
+        self.memory.append(transition)
+
     def get_action(self, state):
         state = torch.tensor(state, dtype=torch.float32).to(DEVICE)
         mu, std = self.actor(state)
@@ -102,56 +106,100 @@ class PPOAgent:
         log_prob = dist.log_prob(action).sum(dim=-1)
         return action.item(), log_prob.item()
  
-    def compute_advantages(self, rewards, values):
-        advantages = torch.zeros_like(rewards).to(DEVICE)
-        advantage = 0
-        for t in reversed(range(len(rewards) - 1)):
-            delta = rewards[t] + GAMMA * values[t + 1] - values[t]
-            advantage = delta + GAMMA * LAMDA * advantage
-            advantages[t] = advantage
-        return advantages
+    def compute_advantages(self, data):
+        adv_data = []
+        for mini_batch in data:
+            state, action, reward, next_state, prob, done = mini_batch
+            with torch.no_grad():
+                td_target = reward + GAMMA * self.critic(next_state) * done
+                delta = td_target - self.critic(state)
+            delta = delta.numpy()
+
+            adv_list = []
+            adv = 0
+            
+            for delta_t in delta[::-1]:
+                adv = GAMMA * LAMDA * adv + delta_t[0]
+                adv_list.append([adv])
+            adv_list.reverse()
+            adv = torch.tensor(np.array(adv_list), dtype=torch.float)
+            adv_data.append((state, action, reward, next_state, done, prob, td_target, adv))
+        return adv_data
+
+
+    def make_batch(self):
+        state_b, action_b, reward_b, next_state_b, prob_b, done_b = [], [], [], [], [], []
+        data = []
+
+        for i in range(BUFFER_SIZE):
+            for j in range(BATCH_SIZE):
+                rollout = self.memory.pop()
+                state_list, action_list, reward_list, next_state_list, prob_list, done_list = [], [], [], [], [], []
+
+                for transition in rollout:
+                    state, action, reward, next_state, prob, done = transition
+                    state_list.append(state)
+                    action_list.append([action])
+                    reward_list.append([reward])
+                    next_state_list.append(next_state)
+                    prob_list.append([prob])
+                    done_list.append([done])
+
+                state_b.append(state_list)
+                action_b.append(action_list)
+                reward_b.append(reward_list)
+                next_state_b.append(next_state_list)
+                prob_b.append(prob_list)
+                done_b.append(done_list)
+
+            mini_batch =  torch.tensor(np.array(state_b), dtype=torch.float), \
+                            torch.tensor(np.array(action_b), dtype=torch.float), \
+                            torch.tensor(np.array(reward_b), dtype=torch.float), \
+                            torch.tensor(np.array(next_state_b), dtype=torch.float), \
+                            torch.tensor(np.array(prob_b), dtype=torch.float), \
+                            torch.tensor(np.array(done_b), dtype=torch.float)
+            data.append(mini_batch)
+
+        return data
 
     def update(self):
-        states, actions, rewards, next_states, old_log_probs, dones = zip(*random.sample(self.memory, BATCH_SIZE))
+        if len(self.memory) == BATCH_SIZE * BUFFER_SIZE:
+            data = self.make_batch()
+            data = self.compute_advantages(data)
 
-        states = torch.tensor(np.array(states), dtype=torch.float32).to(DEVICE)
-        actions = torch.tensor(np.array(actions), dtype=torch.float32).to(DEVICE)
-        rewards = torch.tensor(np.array(rewards), dtype=torch.float32).to(DEVICE)
-        dones = torch.tensor(np.array(dones), dtype=torch.float32).to(DEVICE)
-        old_log_probs = torch.tensor(np.array(old_log_probs), dtype=torch.float32).to(DEVICE)
+            for _ in range(EPOCHS):
+                for mini_batch in data:
+                    state, action, reward, next_state, done, old_prob, td_target, advantage = mini_batch
 
-        for _ in range(EPOCHS):
-            values = self.critic(states).squeeze()
-            advantages = self.compute_advantages(rewards, values)
+                    mu, std = self.actor.forward(state)
+                    dist = torch.distributions.Normal(mu, std)
+                    new_prob = dist.log_prob(action)
+                    ratio = torch.exp(new_prob - old_prob)
+                    clipped_ratio = torch.clamp(ratio, 1 - CLIP_RATIO, 1 + CLIP_RATIO)
 
-            mu, std = self.actor.forward(states, softmax_dim=1)
-            dist = torch.distributions.Normal(mu, std)
-            new_log_probs = dist.log_prob(actions)
+                    # Actor Loss
+                    surr1 = ratio * advantage
+                    surr2 = clipped_ratio * advantage
+                    actor_loss = -torch.min(surr1, surr2).mean()
 
-            ratio = torch.exp(new_log_probs - old_log_probs)
-            clipped_ratio = torch.clamp(ratio, 1 - CLIP_RATIO, 1 + CLIP_RATIO)
+                    self.actor_optimizer.zero_grad()
+                    actor_loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 1.0)
+                    self.actor_optimizer.step()
 
-            # Actor Loss
-            surr1 = ratio * advantages
-            surr2 = clipped_ratio * advantages
-            actor_loss = -torch.min(surr1, surr2).mean()
+                    # Critic Loss
+                    values = self.critic(state).squeeze()
+                    td_target = reward.squeeze() + GAMMA * values.detach().squeeze()
+                    critic_loss = F.smooth_l1_loss(values, td_target.detach())
 
-            self.actor_optimizer.zero_grad()
-            actor_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 1.0)
-            self.actor_optimizer.step()
+                    self.critic_optimizer.zero_grad()
+                    critic_loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1.0)
+                    self.critic_optimizer.step()
 
-            # Critic Loss
-            values = self.critic(states).squeeze()
-            td_target = rewards + GAMMA * values.detach()
-            critic_loss = F.smooth_l1_loss(values, td_target)
-
-            self.critic_optimizer.zero_grad()
-            critic_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1.0)
-            self.critic_optimizer.step()
-
-            return actor_loss.item(), critic_loss.item()
+                return actor_loss.item(), critic_loss.item()
+        else:
+            return 0.0, 0.0
     
 
     def save_model(self):
@@ -169,7 +217,6 @@ class PPOAgent:
         self.writer.add_scalar("model/critic_loss", critic_loss, step)
 
 
-
 if __name__ == "__main__":
     env = gym.make("Pendulum-v1", render_mode="rgb_array")
     agent = PPOAgent()
@@ -182,30 +229,34 @@ if __name__ == "__main__":
         done = False
         step_cnt = 0
         total_reward = 0
+        actor_loss, critic_loss = 0, 0
 
         while not done and step_cnt < MAX_STEP:
-            for _ in range(3):
+            for _ in range(ROLLOUT_LEN):
                 action, log_prob = agent.get_action(state)
                 next_state, reward, done, _, _ = env.step([action])
 
-                agent.memory.append((state, action, reward, next_state, log_prob, done))
+                rollout.append((state, action, reward, next_state, log_prob, done))
                
-            if len(agent.memory) >= BATCH_SIZE:
-                actor_loss, critic_loss = agent.update()
-                agent.memory.clear()
+                if len(rollout) == ROLLOUT_LEN:
+                    agent.append_data(rollout)
+                    rollout = []
+                    break
 
-            step_cnt += 1
-            total_reward += reward
-            state = next_state
-            total_step += 1
+                step_cnt += 1
+                total_reward += reward
+                state = next_state
+                total_step += 1
+            
+            a_loss, c_loss = agent.update()
+            actor_loss += a_loss
+            critic_loss += c_loss
 
         avg_10_reward.append(total_reward)
-        avg_reward = np.mean(avg_10_reward)
-        
-        agent.write_summray(total_reward, actor_loss, critic_loss, total_step)
+        agent.write_summray(np.mean(avg_10_reward), actor_loss, critic_loss, total_step)
 
         if episode % PRINT_INTERVAL == 0:
-            print(f"Episode {episode} | Avg_Reward: {avg_reward:.2f} |Step:{total_step}| Actor Loss: {actor_loss:.2f} | Critic Loss: {critic_loss:.2f}")
+            print(f"Episode {episode} | Avg_Reward: {np.mean(avg_10_reward):.2f} |Step:{total_step}| Actor Loss: {actor_loss:.6f} | Critic Loss: {critic_loss:.6f}")
         
         if TRAIN_MODE and episode % SAVE_INTERVAL == 0:
             agent.save_model()
