@@ -46,7 +46,7 @@ class Actor(nn.Module):
         self.fc_mu = nn.Linear(128, ACTION_DIM)
         self.fc_std = nn.Linear(128, ACTION_DIM)
 
-    def forward(self, x, softmax_dim = 0):
+    def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         mu = 2.0 * torch.tanh(self.fc_mu(x))
@@ -166,15 +166,18 @@ if __name__ == "__main__":
         total_reward = 0
         actor_loss, critic_loss = 0, 0
 
-        for _ in range(MAX_STEPS):
+        done = False
+        while not done:
             action, log_prob = agent.get_action(state)
-            next_state, reward, done, _, _ = env.step([action])
+
+            next_state, reward, terminated, truncated, _ = env.step([action])
+            done = terminated | truncated
+
             agent.append_data((state, action, reward, next_state, log_prob, done))
             state = next_state
             total_reward += reward
             total_step += 1
-            if done:
-                break
+        
         if TRAIN_MODE:
             a_loss, c_loss = agent.train_model()
             actor_loss += a_loss
