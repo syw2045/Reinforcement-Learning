@@ -8,6 +8,7 @@
 | Value Iteration | Taxi_v3 | ![Taxi](https://github.com/user-attachments/assets/549bd7c3-5348-49d1-9eb7-b8cc9b62e6a4) | |
 | DQN | Cartpole | ![Image](https://github.com/user-attachments/assets/903f64eb-8530-490f-a7cd-15a79bd72b66) | |
 | PPO | Pendulum | ![Image](https://github.com/user-attachments/assets/7c2d1cff-6d2d-49d4-9191-9820ef986a0a) | ![Image](https://github.com/user-attachments/assets/11e8f615-c46f-48b5-bfaa-9a3780c5fa0d) |
+| DDPG | MountainCarContinuous | ![Image](https://github.com/user-attachments/assets/1f4b201b-2a2f-4632-aae7-025f711ca8c8) | ![Image](https://github.com/user-attachments/assets/a8424bc6-69d8-42ae-bbe4-6b3ab96d1121) |
 
 ## Atari Games
 | Algorithms      | Environment  | GIF | Plots |

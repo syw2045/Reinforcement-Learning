@@ -31,8 +31,8 @@ MEM_MINLEN = 1000
 BATCH_SIZE = 32
 SAVE_INTERVAL = 50
 
-TEST_MODE = False
-TRAIN_MODE = True
+TEST_MODE = True
+TRAIN_MODE = False
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -183,7 +183,7 @@ class DDPGAgent:
         self.writer.add_scalar("model/critic_loss", critic_loss, step)
 
 if __name__ == '__main__':
-    env = gym.make("MountainCarContinuous-v0", render_mode="rgb_array")
+    env = gym.make("MountainCarContinuous-v0", render_mode="human")
     agent = DDPGAgent()
     total_step = 0
 
