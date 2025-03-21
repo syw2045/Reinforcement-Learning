@@ -29,15 +29,16 @@ MEM_MAXLEN = 100000
 MEM_MINLEN = 1000
 
 BATCH_SIZE = 32
+SAVE_INTERVAL = 50
 
 TEST_MODE = False
 TRAIN_MODE = True
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# date_time = datetime.datetime.now().strftime("%y%m%d%H%M%S")
-# save_path = f"./saved_models/MountainCar/DDPG/{date_time}"
-# load_path = f"./saved_models/MountainCar/DDPG/"
+date_time = datetime.datetime.now().strftime("%y%m%d%H%M%S")
+save_path = f"./saved_models/MountainCar/DDPG/{date_time}"
+load_path = f"./saved_models/MountainCar/DDPG/250321111731"
 
 class OU_noise:
     def __init__(self, size=ACTION_DIM, mu=MU, theta=THETA, sigma=SIGMA):
@@ -109,6 +110,18 @@ class DDPGAgent:
 
         self.target_actor.load_state_dict(self.actor.state_dict())
         self.target_critic.load_state_dict(self.critic.state_dict())
+        self.writer = SummaryWriter(save_path)
+
+        if TEST_MODE == True:
+            print(f"... Load Model from {load_path}/ckpt ...")
+            checkpoint = torch.load(load_path+'/ckpt', map_location=DEVICE)
+            self.actor.load_state_dict(checkpoint["actor"])
+            self.target_actor.load_state_dict(checkpoint["actor"])
+            self.actor_optimizer.load_state_dict(checkpoint["actor_optimizer"])
+            self.critic.load_state_dict(checkpoint["critic"])
+            self.target_critic.load_state_dict(checkpoint["critic"])
+            self.critic_optimizer.load_state_dict(checkpoint["critic_optimizer"])
+
 
     def get_action(self, state):
         state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
@@ -155,6 +168,20 @@ class DDPGAgent:
         for target_param, local_param in zip(self.target_critic.parameters(), self.critic.parameters()):
             target_param.data.copy_(TAU * local_param.data + (1.0 - TAU) * target_param.data)
 
+    def save_model(self):
+        print(f"... Save Model to {save_path}/ckpt ...")
+        torch.save({
+            "actor" : self.actor.state_dict(),
+            "actor_optimizer" : self.actor_optimizer.state_dict(),
+            "critic" : self.critic.state_dict(),
+            "critic_optimizer" : self.critic_optimizer.state_dict(),
+        }, save_path+'/ckpt')
+
+    def write_summray(self, score, actor_loss, critic_loss, step):
+        self.writer.add_scalar("run/score", score, step)
+        self.writer.add_scalar("model/actor_loss", actor_loss, step)
+        self.writer.add_scalar("model/critic_loss", critic_loss, step)
+
 if __name__ == '__main__':
     env = gym.make("MountainCarContinuous-v0", render_mode="rgb_array")
     agent = DDPGAgent()
@@ -180,7 +207,9 @@ if __name__ == '__main__':
                 agent.soft_update_target()
             
 
-
+        agent.write_summray(total_reward, actor_loss, critic_loss, total_step)
         print(f"Episode {episode} | Total Steps {total_step} | Avg Reward: {total_reward:.2f} | Actor_Loss:{actor_loss:.4f} | Critic_Loss:{critic_loss:.4f}")
 
+        if TRAIN_MODE and episode % SAVE_INTERVAL == 0:
+                agent.save_model()
     env.close()
