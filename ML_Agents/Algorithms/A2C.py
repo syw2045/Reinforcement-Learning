@@ -11,8 +11,8 @@ from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig
 state_size = 6*2
 action_size = 4
 
-load_model = False
-train_mode = True
+load_model = True
+train_mode = False
 
 discount_factor = 0.9
 learning_rate = 0.00025
@@ -35,7 +35,7 @@ env_name = f"../envs/GridWorld/GridWorld.exe"
 # model save and load path
 date_time = datetime.datetime.now().strftime("%y%m%d%H%M%S")
 save_path = f"./saved_models/{game}/A2C/{date_time}"
-load_path = f"./saved_models/{game}/A2C/"
+load_path = f"./saved_models/{game}/A2C/250303182504"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -102,7 +102,7 @@ class A2CAgent:
         print(f"... Save Model to {save_path}/ckpt ...")
         torch.save({
             "network" : self.a2c.state_dict(),
-            "optimzer" : self.optimizer.state_dict(),
+            "optimizer" : self.optimizer.state_dict(),
         }, save_path+'/ckpt')
 
     

@@ -220,8 +220,7 @@ if __name__ == '__main__':
                 agent.write_summray(mean_score, mean_actor_loss, mean_critic_loss, step)
                 actor_losses, critic_losses, scores = [], [], []
 
-                print(f"{episode} Episode / Step: {step} / Score: {mean_score:.2f} / " +\
-f"Actor loss: {mean_actor_loss:.2f} / Critic loss: {mean_critic_loss:.4f}")
+                print(f"{episode} Episode / Step: {step} / Score: {mean_score:.2f} / " + f"Actor loss: {mean_actor_loss:.2f} / Critic loss: {mean_critic_loss:.4f}")
 
             if train_mode and episode % save_interval == 0:
                 agent.save_model()
